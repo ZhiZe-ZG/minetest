@@ -1090,11 +1090,15 @@ bool MapblockMeshGenerator::isSameRail(v3s16 dir)
 
 void MapblockMeshGenerator::drawRaillikeNode()
 {
-	static const v3s16 direction[4] = {
+	static const v3s16 direction[8] = {
+		v3s16(-1, 0,  1),
+		v3s16( 1, 0,  1),
+		v3s16( 1, 0, -1),
+		v3s16(-1, 0, -1),
 		v3s16( 0, 0,  1),
-		v3s16( 0, 0, -1),
-		v3s16(-1, 0,  0),
 		v3s16( 1, 0,  0),
+		v3s16( 0, 0, -1),
+		v3s16(-1, 0,  0)
 	};
 	static const int slope_angle[4] = {0, 180, 90, -90};
 
@@ -1103,14 +1107,39 @@ void MapblockMeshGenerator::drawRaillikeNode()
 		curved,
 		junction,
 		cross,
+		diagonal
 	};
+
+	/*
+		Rail coordinates of each bit of total 8:
+		-x+z|+x+z|+x-z|-x-z +z|+x|-z|-x
+
+		ASCII art below: MSB = 1, LSB = 8 (due L->R notation)
+		-x+z   +x+z
+		   1 5 2
+		   8 X 6
+		   4 7 3
+		-x-z   +x-z
+	*/
+
 	struct RailDesc {
 		int tile_index;
-		int angle;
+		// Rail info: [rail disallowed][requires rail]
+		u16 rail_prop;
 	};
-	static const RailDesc rail_kinds[16] = {
-		                   // +x -x -z +z
-		                   //-------------
+	static const u8 count_basics = 4;
+	static bool rail_kinds_initialized = false;
+
+	// Basic definitions of the rail kinds with 0° rotation
+	static RailDesc rail_kinds[count_basics * 4] = {
+		{straight, 0x0500},
+		{  curved, 0x0609},
+		{junction, 0x0E08},
+		{   cross, 0x0F00}
+	};
+	/*static const RailDesc rail_kinds[16] = {
+		                 // +x -x -z +z
+		                 //-------------
 		{straight,   0}, //  .  .  .  .
 		{straight,   0}, //  .  .  . +Z
 		{straight,   0}, //  .  . -Z  .
@@ -1127,11 +1156,58 @@ void MapblockMeshGenerator::drawRaillikeNode()
 		{junction,  90}, // +X -X  . +Z
 		{junction, 270}, // +X -X -Z  .
 		{   cross,   0}, // +X -X -Z +Z
-	};
+	};*/
+
+	if (!rail_kinds_initialized) {
+		// Process the rail kinds - do the tetris flip three times
+		// Rotate all bits counter-clockwise (towards MSB)
+		for (unsigned i = 0; i < count_basics * 3; i++) {
+			const u16 rail_prop = rail_kinds[i].rail_prop;
+			u16 rotated = (rail_prop & 0x7F7F) << 1;
+			rotated |= (rail_prop & 0x8080) >> 3;
+
+			rail_kinds[i + count_basics].rail_prop = rotated;
+			rail_kinds[i + count_basics].tile_index = rail_kinds[i].tile_index;
+		}
+		// Only do this the first time when needed
+		rail_kinds_initialized = true;
+	}
 
 	raillike_group = nodedef->get(n).getGroup(raillike_groupname);
 
-	int code = 0;
+	/*
+		Neighbour data. Only using 16 bits for the map check
+		Upper byte: rail found upwards
+		Lower byte: rails found
+	*/
+	u32 neighbours = 0;
+	for (v3s16 &dir : direction) {
+		neighbours <<= 1;
+
+		u32 adder = 0;
+		if (isSameRail(dir) ||
+				isSameRail(dir + v3s16(0, -1, 0))) {
+			adder = 0x0001;
+		} else if (!(dir.X && dir.Z) &&
+				isSameRail(dir + v3s16(0, 1, 0))) {
+			// Whether the rail could go upwards (X = 0 or X = 0 only)
+			adder = 0x0101; // lol
+		}
+		neighbours |= adder;
+	}
+
+	{
+		// Copy same results to the new lower byte for faster rail detection
+		u32 lower = neighbours & 0x00FF;
+		neighbours = (neighbours << 8) | lower;
+	}
+
+	for (unsigned dir = 0; dir < 8; dir++) {
+
+	}
+
+
+	/*int code = 0;
 	int angle;
 	int tile_index;
 	bool sloped = false;
@@ -1152,7 +1228,7 @@ void MapblockMeshGenerator::drawRaillikeNode()
 	} else {
 		tile_index = rail_kinds[code].tile_index;
 		angle = rail_kinds[code].angle;
-	}
+	}*/
 
 	useTile(tile_index, MATERIAL_FLAG_CRACK_OVERLAY, MATERIAL_FLAG_BACKFACE_CULLING);
 
