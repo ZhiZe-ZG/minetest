@@ -1124,74 +1124,83 @@ void MapblockMeshGenerator::drawRaillikeNode()
 
 	struct RailDesc {
 		int tile_index;
+		int rotation;
 		// Rail info: [rail disallowed][requires rail]
 		u16 rail_prop;
 	};
-	static const u8 count_basics = 4;
-	static bool rail_kinds_initialized = false;
 
-	// Basic definitions of the rail kinds with 0° rotation
-	static RailDesc rail_kinds[count_basics * 4] = {
-		{straight, 0x0500},
-		{  curved, 0x0609},
-		{junction, 0x0E08},
-		{   cross, 0x0F00}
-	};
-	/*static const RailDesc rail_kinds[16] = {
-		                 // +x -x -z +z
-		                 //-------------
-		{straight,   0}, //  .  .  .  .
-		{straight,   0}, //  .  .  . +Z
-		{straight,   0}, //  .  . -Z  .
-		{straight,   0}, //  .  . -Z +Z
-		{straight,  90}, //  . -X  .  .
-		{  curved, 180}, //  . -X  . +Z
-		{  curved, 270}, //  . -X -Z  .
-		{junction, 180}, //  . -X -Z +Z
-		{straight,  90}, // +X  .  .  .
-		{  curved,  90}, // +X  .  . +Z
-		{  curved,   0}, // +X  . -Z  .
-		{junction,   0}, // +X  . -Z +Z
-		{straight,  90}, // +X -X  .  .
-		{junction,  90}, // +X -X  . +Z
-		{junction, 270}, // +X -X -Z  .
-		{   cross,   0}, // +X -X -Z +Z
-	};*/
+	static std::vector<RailDesc> rail_lookup;
 
-	if (!rail_kinds_initialized) {
+	if (rail_lookup.count() == 0) {
+		// Basic definitions of the rail kinds with 0° rotation
+		// Index 0 = First priority (most complicated)
+		const RailDesc rail_kinds[] = {
+			{   cross, 0, 0x0F00},
+			{junction, 0, 0x0E08},
+			{  curved, 0, 0x0609},
+			{straight, 0, 0x0500}
+		};
+
+		const int n_kinds = ARRLEN(rail_kinds);
+
 		// Process the rail kinds - do the tetris flip three times
-		// Rotate all bits counter-clockwise (towards MSB)
-		for (unsigned i = 0; i < count_basics * 3; i++) {
-			const u16 rail_prop = rail_kinds[i].rail_prop;
-			u16 rotated = (rail_prop & 0x7F7F) << 1;
-			rotated |= (rail_prop & 0x8080) >> 3;
+		// Rotate all bits counter-clockwise (towards MSB) -> +90°
+		for (int ri = 0; ri < n_kinds; ri++) {
+			const u16 tile_index = rail_kinds[ri].tile_index;
+			u16 rail_prop  = rail_kinds[ri].rail_prop;
+			// Add rail with (rotation = 0)
+			rail_lookup.push_back(rail_kinds[ri]);
 
-			rail_kinds[i + count_basics].rail_prop = rotated;
-			rail_kinds[i + count_basics].tile_index = rail_kinds[i].tile_index;
+			for (int i = 1; i < 4; i++) {
+				// Do the rotation
+				u16 rotated = (rail_prop & 0x7777) << 1;
+				rotated |= (rail_prop & 0x8888) >> 3;
+
+				// Check for existence of this pattern
+				bool exists = false;
+				for (std::vector<RailDesc>::reverse_iterator it =
+						rail_lookup.rbegin(); it != rail_lookup.rend(); ++it) {
+
+					if (it->tile_index != tile_index)
+						break;
+
+					if (it->rail_prop == rotated) {
+						exists = true;
+						break;
+					}
+				}
+				if (exists)
+					break;
+
+				rail_prop = rotated;
+				RailDesc rail {tile_index, i * 90, rotated};
+				rail_lookup.push_back(rail);
+			}
 		}
-		// Only do this the first time when needed
-		rail_kinds_initialized = true;
 	}
 
 	raillike_group = nodedef->get(n).getGroup(raillike_groupname);
 
 	/*
-		Neighbour data. Only using 16 bits for the map check
-		Upper byte: rail found upwards
-		Lower byte: rails found
+		Neighbour data
+		Offset 8: rails found
+		Offset 0: rails found, copy of offset 8
 	*/
-	u32 neighbours = 0;
+	u16 neighbours = 0;
+	int slope_angle = -1;
+
 	for (v3s16 &dir : direction) {
 		neighbours <<= 1;
 
-		u32 adder = 0;
+		u16 adder = 0;
 		if (isSameRail(dir) ||
 				isSameRail(dir + v3s16(0, -1, 0))) {
-			adder = 0x0001;
-		} else if (!(dir.X && dir.Z) &&
+			adder = 1;
+		} else if (!(dir.X && dir.Z)
 				isSameRail(dir + v3s16(0, 1, 0))) {
 			// Whether the rail could go upwards (X = 0 or X = 0 only)
-			adder = 0x0101; // lol
+			adder = 1;
+			slope_angle = 0;
 		}
 		neighbours |= adder;
 	}
@@ -1202,8 +1211,13 @@ void MapblockMeshGenerator::drawRaillikeNode()
 		neighbours = (neighbours << 8) | lower;
 	}
 
-	for (unsigned dir = 0; dir < 8; dir++) {
-
+	std::vector<RailDesc>::const_iterator it;
+	for (it = rail_lookup.begin(); it != rail_lookup.end(); ++it) {
+		u16 must_rails = (it->rail_prop & 0x00FF) ^ neighbours;
+		if ((must_rails & it->rail_prop) == 0) {
+			// Found the most complicated rail possible
+			break;
+		}
 	}
 
 
