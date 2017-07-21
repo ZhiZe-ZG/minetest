@@ -1100,7 +1100,8 @@ void MapblockMeshGenerator::drawRaillikeNode()
 		v3s16( 0, 0, -1),
 		v3s16(-1, 0,  0)
 	};
-	static const int slope_angle[4] = {0, 180, 90, -90};
+
+	static const int slope_angle[4] = {0, -90, 180, 90};
 
 	enum RailTile {
 		straight,
@@ -1131,13 +1132,15 @@ void MapblockMeshGenerator::drawRaillikeNode()
 
 	static std::vector<RailDesc> rail_lookup;
 
-	if (rail_lookup.count() == 0) {
+	if (rail_lookup.size() == 0) {
 		// Basic definitions of the rail kinds with 0° rotation
 		// Index 0 = First priority (most complicated)
 		const RailDesc rail_kinds[] = {
-			{   cross, 0, 0x0F00},
-			{junction, 0, 0x0E08},
-			{  curved, 0, 0x0609},
+			{diagonal, 0, 0x2916},
+			{diagonal, 0, 0x2946},
+			{   cross, 0, 0x000F},
+			{junction, 0, 0x010E},
+			{  curved, 0, 0x0906},
 			{straight, 0, 0x0500}
 		};
 
@@ -1187,22 +1190,26 @@ void MapblockMeshGenerator::drawRaillikeNode()
 		Offset 0: rails found, copy of offset 8
 	*/
 	u16 neighbours = 0;
-	int slope_angle = -1;
+	bool sloped = false;
+	int rotation = 0;
 
-	for (v3s16 &dir : direction) {
+	for (int i = 0; i < 8; i++) {
+		const v3s16 &dir = direction[i];
 		neighbours <<= 1;
 
-		u16 adder = 0;
 		if (isSameRail(dir) ||
 				isSameRail(dir + v3s16(0, -1, 0))) {
-			adder = 1;
-		} else if (!(dir.X && dir.Z)
+			// OK
+		} else if (!(dir.X && dir.Z) &&
 				isSameRail(dir + v3s16(0, 1, 0))) {
 			// Whether the rail could go upwards (X = 0 or X = 0 only)
-			adder = 1;
-			slope_angle = 0;
+			sloped = true;
+			rotation = slope_angle[i - 4];
+		} else {
+			// Found no rail: Don't add anything
+			continue;
 		}
-		neighbours |= adder;
+		neighbours |= 1;
 	}
 
 	{
@@ -1213,41 +1220,29 @@ void MapblockMeshGenerator::drawRaillikeNode()
 
 	std::vector<RailDesc>::const_iterator it;
 	for (it = rail_lookup.begin(); it != rail_lookup.end(); ++it) {
-		u16 must_rails = (it->rail_prop & 0x00FF) ^ neighbours;
+		// Flip all required rails from 1 to 0
+		u16 must_rails = neighbours ^ (it->rail_prop & 0x00FF);
+		// All required and forbidden rails are 0 now
 		if ((must_rails & it->rail_prop) == 0) {
 			// Found the most complicated rail possible
 			break;
 		}
 	}
+	if (it == rail_lookup.end())
+		it--;
 
-
-	/*int code = 0;
-	int angle;
-	int tile_index;
-	bool sloped = false;
-	for (int dir = 0; dir < 4; dir++) {
-		bool rail_above = isSameRail(direction[dir] + v3s16(0, 1, 0));
-		if (rail_above) {
-			sloped = true;
-			angle = slope_angle[dir];
-		}
-		if (rail_above ||
-				isSameRail(direction[dir]) ||
-				isSameRail(direction[dir] + v3s16(0, -1, 0)))
-			code |= 1 << dir;
+	// Final modifications for sloped rails
+	int tile_index = RailTile::straight;
+	if (!sloped) {
+		tile_index = it->tile_index;
+		rotation   = it->rotation;
 	}
-
-	if (sloped) {
-		tile_index = straight;
-	} else {
-		tile_index = rail_kinds[code].tile_index;
-		angle = rail_kinds[code].angle;
-	}*/
 
 	useTile(tile_index, MATERIAL_FLAG_CRACK_OVERLAY, MATERIAL_FLAG_BACKFACE_CULLING);
 
 	static const float offset = BS / 64;
 	static const float size   = BS / 2;
+	// TODO: Also slope the other sides, depending on "neighbours"
 	float y2 = sloped ? size : -size;
 	v3f vertices[4] = {
 		v3f(-size,    y2 + offset,  size),
@@ -1255,9 +1250,9 @@ void MapblockMeshGenerator::drawRaillikeNode()
 		v3f( size, -size + offset, -size),
 		v3f(-size, -size + offset, -size),
 	};
-	if (angle)
+	if (rotation)
 		for (int i = 0; i < 4; i++)
-			vertices[i].rotateXZBy(angle);
+			vertices[i].rotateXZBy(rotation);
 	drawQuad(vertices);
 }
 
