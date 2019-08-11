@@ -580,7 +580,7 @@ MapBlock *EmergeThread::finishGen(v3s16 pos, BlockMakeData *bmdata,
 	*/
 	try {
 		m_server->getScriptIface()->environment_OnGenerated(
-			minp, maxp, m_mapgen->blockseed);
+				minp, maxp, m_mapgen->blockseed);
 	} catch (LuaError &e) {
 		m_server->setAsyncFatalError("Lua: finishGen" + std::string(e.what()));
 	}

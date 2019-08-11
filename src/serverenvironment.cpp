@@ -45,6 +45,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "database/database-postgresql.h"
 #endif
 #include <algorithm>
+#include <lua_api/l_env.h>
 
 #define LBM_NAME_ALLOWED_CHARS "abcdefghijklmnopqrstuvwxyz0123456789_:"
 
@@ -255,6 +256,7 @@ void LBMManager::applyLBMs(ServerEnvironment *env, MapBlock *block, u32 stamp)
 	MapNode n;
 	content_t c;
 	lbm_lookup_map::const_iterator it = getLBMsIntroducedAfter(stamp);
+	auto script = env->getScriptIface();
 	for (; it != m_lbm_lookup.end(); ++it) {
 		// Cache previous version to speedup lookup which has a very high performance
 		// penalty on each call
@@ -277,7 +279,8 @@ void LBMManager::applyLBMs(ServerEnvironment *env, MapBlock *block, u32 stamp)
 					if (!lbm_list)
 						continue;
 					for (auto lbmdef : *lbm_list) {
-						lbmdef->trigger(env, pos + pos_of_block, n);
+						script->runAsync(&LuaLBM::trigger, (LuaLBM *)lbmdef, env, pos + pos_of_block, n);
+						//lbmdef->trigger(env, pos + pos_of_block, n);
 					}
 				}
 	}
@@ -867,6 +870,7 @@ public:
 		blocks_scanned++;
 
 		ServerMap *map = &m_env->getServerMap();
+		auto script = m_env->getScriptIface();
 
 		u32 active_object_count_wider;
 		u32 active_object_count = this->countObjects(block, map, active_object_count_wider);
@@ -927,9 +931,12 @@ public:
 
 				abms_run++;
 				// Call all the trigger variations
-				aabm.abm->trigger(m_env, p, n);
-				aabm.abm->trigger(m_env, p, n,
-					active_object_count, active_object_count_wider);
+				script->runAsync(&LuaABM::trigger, (LuaABM *)aabm.abm, m_env, p, n,
+					active_object_count, active_object_count_wider
+				);
+				//aabm.abm->trigger(m_env, p, n);
+				//aabm.abm->trigger(m_env, p, n,
+				//	active_object_count, active_object_count_wider);
 
 				// Count surrounding objects again if the abms added any
 				if(m_env->m_added_objects > 0) {
@@ -1396,7 +1403,7 @@ void ServerEnvironment::step(float dtime)
 	/*
 		Step script environment (run global on_step())
 	*/
-	m_script->environment_Step(dtime);
+	m_script->runAsync(&ServerScripting::environment_Step, m_script, dtime);
 
 	/*
 		Step active objects

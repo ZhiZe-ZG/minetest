@@ -400,7 +400,7 @@ void Server::handleCommand_ClientReady(NetworkPacket* pkt)
 	m_clients.sendToAll(&notice_pkt);
 
 	m_clients.event(peer_id, CSE_SetClientReady);
-	m_script->on_joinplayer(playersao);
+	m_script->runAsync(&ServerScripting::on_joinplayer, m_script, playersao);
 	// Send shutdown timer if shutdown has been scheduled
 	if (m_shutdown_state.isTimerRunning()) {
 		SendChatMessage(pkt->getPeerId(), m_shutdown_state.getShutdownTimerMessage());
@@ -1132,7 +1132,8 @@ void Server::handleCommand_Interact(NetworkPacket *pkt)
 			}
 
 			if (n.getContent() != CONTENT_IGNORE)
-				m_script->node_on_punch(p_under, n, playersao, pointed);
+				m_script->runAsync(&ServerScripting::node_on_punch, m_script,
+						p_under, n, playersao, pointed);
 
 			// Cheat prevention
 			playersao->noCheatDigStart(p_under);
@@ -1264,7 +1265,8 @@ void Server::handleCommand_Interact(NetworkPacket *pkt)
 			/* Actually dig node */
 
 			if (is_valid_dig && n.getContent() != CONTENT_IGNORE)
-				m_script->node_on_dig(p_under, n, playersao);
+				m_script->runAsync(&ServerScripting::node_on_dig, m_script,
+						p_under, n, playersao);
 
 			v3s16 blockpos = getNodeBlockPos(floatToInt(pointed_pos_under, BS));
 			RemoteClient *client = getClient(pkt->getPeerId());
@@ -1441,7 +1443,8 @@ void Server::handleCommand_NodeMetaFields(NetworkPacket* pkt)
 	// Check the target node for rollback data; leave others unnoticed
 	RollbackNode rn_old(&m_env->getMap(), p, this);
 
-	m_script->node_on_receive_fields(p, formname, fields, playersao);
+	m_script->runAsync(&ServerScripting::node_on_receive_fields, m_script, p,
+			formname, fields, playersao);
 
 	// Report rollback data
 	RollbackNode rn_new(&m_env->getMap(), p, this);
@@ -1486,7 +1489,8 @@ void Server::handleCommand_InventoryFields(NetworkPacket* pkt)
 	}
 
 	if (client_formspec_name.empty()) { // pass through inventory submits
-		m_script->on_playerReceiveFields(playersao, client_formspec_name, fields);
+		m_script->runAsync(&ServerScripting::on_playerReceiveFields, m_script,
+				playersao, client_formspec_name, fields);
 		return;
 	}
 
@@ -1499,7 +1503,8 @@ void Server::handleCommand_InventoryFields(NetworkPacket* pkt)
 			if (it != fields.end() && it->second == "true")
 				m_formspec_state_data.erase(peer_state_iterator);
 
-			m_script->on_playerReceiveFields(playersao, client_formspec_name, fields);
+			m_script->runAsync(&ServerScripting::on_playerReceiveFields, m_script,
+					playersao, client_formspec_name, fields);
 			return;
 		}
 		actionstream << "'" << player->getName()
@@ -1555,7 +1560,8 @@ void Server::handleCommand_FirstSrp(NetworkPacket* pkt)
 		std::string initial_ver_key;
 
 		initial_ver_key = encode_srp_verifier(verification_key, salt);
-		m_script->createAuth(playername, initial_ver_key);
+		m_script->runAsync(&ServerScripting::createAuth, m_script,
+				playername, initial_ver_key);
 
 		acceptAuth(pkt->getPeerId(), false);
 	} else {
@@ -1751,7 +1757,7 @@ void Server::handleCommand_SrpBytesM(NetworkPacket* pkt)
 			<< " at " << ip
 			<< " supplied wrong password (auth mechanism: SRP)."
 			<< std::endl;
-		m_script->on_auth_failure(client->getName(), ip);
+		m_script->runAsync(&ServerScripting::on_auth_failure, m_script, client->getName(), ip);
 		DenyAccess(pkt->getPeerId(), SERVER_ACCESSDENIED_WRONG_PASSWORD);
 		return;
 	}

@@ -289,6 +289,10 @@ Server::~Server()
 		delete m_thread;
 	}
 
+	// Deinitialize scripting
+	infostream << "Server: Deinitializing scripting" << std::endl;
+	m_script->stop();
+
 	// Delete things in the reverse order of creation
 	delete m_emerge;
 	delete m_env;
@@ -298,9 +302,9 @@ Server::~Server()
 	delete m_nodedef;
 	delete m_craftdef;
 
-	// Deinitialize scripting
-	infostream << "Server: Deinitializing scripting" << std::endl;
+	m_script->wait();
 	delete m_script;
+
 
 	// Delete detached inventories
 	for (auto &detached_inventory : m_detached_inventories) {
@@ -393,6 +397,7 @@ void Server::init()
 
 	// Give environment reference to scripting api
 	m_script->initializeEnvironment(m_env);
+	m_script->start();
 
 	// Register us to receive map edit events
 	servermap->addEventReceiver(this);
@@ -1828,7 +1833,8 @@ void Server::SendPlayerHP(session_t peer_id)
 		return;
 
 	SendHP(peer_id, playersao->getHP());
-	m_script->player_event(playersao,"health_changed");
+	m_script->runAsync(&ServerScripting::player_event, m_script,
+			playersao, "health_changed");
 
 	// Send to other clients
 	std::string str = gob_cmd_punched(playersao->getHP());
@@ -1840,7 +1846,8 @@ void Server::SendPlayerBreath(PlayerSAO *sao)
 {
 	assert(sao);
 
-	m_script->player_event(sao, "breath_changed");
+	m_script->runAsync(&ServerScripting::player_event, m_script,
+			sao, "breath_changed");
 	SendBreath(sao->getPeerID(), sao->getBreath());
 }
 
@@ -2644,7 +2651,7 @@ void Server::DiePlayer(session_t peer_id, const PlayerHPChangeReason &reason)
 	playersao->clearParentAttachment();
 
 	// Trigger scripted stuff
-	m_script->on_dieplayer(playersao, reason);
+	m_script->runAsync(&ServerScripting::on_dieplayer, m_script, playersao, reason);
 
 	SendPlayerHP(peer_id);
 	SendDeathscreen(peer_id, false, v3f(0,0,0));
@@ -2779,7 +2786,8 @@ void Server::DeleteClient(session_t peer_id, ClientDeletionReason reason)
 			notice << (u8) PLAYER_LIST_REMOVE  << (u16) 1 << player_name;
 			m_clients.sendToAll(&notice);
 			// run scripts
-			m_script->on_leaveplayer(playersao, reason == CDR_TIMEOUT);
+			m_script->runAsync(&ServerScripting::on_leaveplayer, m_script,
+					playersao, reason == CDR_TIMEOUT);
 
 			playersao->disconnected();
 		}
@@ -3655,7 +3663,7 @@ PlayerSAO* Server::emergePlayer(const char *name, session_t peer_id, u16 proto_v
 
 	/* Run scripts */
 	if (newplayer) {
-		m_script->on_newplayer(playersao);
+		m_script->runAsync(&ServerScripting::on_newplayer, m_script, playersao);
 	}
 
 	return playersao;
@@ -3788,6 +3796,7 @@ void Server::broadcastModChannelMessage(const std::string &channel,
 	}
 
 	if (from_peer != PEER_ID_SERVER) {
-		m_script->on_modchannel_message(channel, sender, message);
+		m_script->runAsync(&ServerScripting::on_modchannel_message, m_script,
+				channel, sender, message);
 	}
 }

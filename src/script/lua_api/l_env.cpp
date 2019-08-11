@@ -57,6 +57,7 @@ void LuaABM::trigger(ServerEnvironment *env, v3s16 p, MapNode n,
 		u32 active_object_count, u32 active_object_count_wider)
 {
 	ServerScripting *scriptIface = env->getScriptIface();
+	RecursiveMutexAutoLock lock(scriptIface->m_luastackmutex);
 	scriptIface->realityCheck();
 
 	lua_State *L = scriptIface->getStack();
@@ -100,6 +101,7 @@ void LuaABM::trigger(ServerEnvironment *env, v3s16 p, MapNode n,
 void LuaLBM::trigger(ServerEnvironment *env, v3s16 p, MapNode n)
 {
 	ServerScripting *scriptIface = env->getScriptIface();
+	RecursiveMutexAutoLock lock(scriptIface->m_luastackmutex);
 	scriptIface->realityCheck();
 
 	lua_State *L = scriptIface->getStack();

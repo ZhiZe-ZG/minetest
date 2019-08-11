@@ -122,6 +122,33 @@ void ServerScripting::InitializeModApi(lua_State *L, int top)
 	ModApiChannels::Initialize(L, top);
 }
 
+
+void *ServerScripting::run()
+{
+	BEGIN_DEBUG_EXCEPTION_HANDLER
+
+	while (true) {
+		if (!stopRequested())
+			sleep_ms(m_queue_void.empty() ? 10 : 1);
+
+		RecursiveMutexAutoLock lock(m_luastackmutex);
+
+		if (m_queue_void.empty()) {
+			if (stopRequested())
+				break;
+			else
+				continue;
+		}
+
+		m_queue_void.front()();
+		m_queue_void.pop();
+		std::cout << "len: " << m_queue_void.size() << std::endl;
+	}
+
+	END_DEBUG_EXCEPTION_HANDLER
+	return nullptr;
+}
+
 void log_deprecated(const std::string &message)
 {
 	log_deprecated(NULL, message);

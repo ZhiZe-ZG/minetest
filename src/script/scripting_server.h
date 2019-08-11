@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #pragma once
+#include <functional>
 #include "cpp_api/s_base.h"
 #include "cpp_api/s_entity.h"
 #include "cpp_api/s_env.h"
@@ -27,12 +28,16 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "cpp_api/s_player.h"
 #include "cpp_api/s_server.h"
 #include "cpp_api/s_security.h"
+#include "threading/mutex_auto_lock.h"
+#include "threading/thread.h"
+
+typedef std::function<void()> luacpp_void;
 
 /*****************************************************************************/
 /* Scripting <-> Server Game Interface                                       */
 /*****************************************************************************/
 
-class ServerScripting:
+class ServerScripting :
 		virtual public ScriptApiBase,
 		public ScriptApiDetached,
 		public ScriptApiEntity,
@@ -41,15 +46,35 @@ class ServerScripting:
 		public ScriptApiNode,
 		public ScriptApiPlayer,
 		public ScriptApiServer,
-		public ScriptApiSecurity
+		public ScriptApiSecurity,
+		public Thread
 {
 public:
 	ServerScripting(Server* server);
+
+	void *run();
+	void signal();
+
+	template<typename... Args>
+	void runAsync(Args... args)
+	{
+		RecursiveMutexAutoLock lock(m_luastackmutex);
+		m_queue_void.push(std::bind(args...));
+	}
+
+	template<typename... Args>
+	void runSync(Args... args)
+	{
+		RecursiveMutexAutoLock lock(m_luastackmutex);
+		std::bind(args...)();
+	}
 
 	// use ScriptApiBase::loadMod() to load mods
 
 private:
 	void InitializeModApi(lua_State *L, int top);
+
+	std::queue<luacpp_void> m_queue_void;
 };
 
 void log_deprecated(const std::string &message);
