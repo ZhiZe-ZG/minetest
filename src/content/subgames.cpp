@@ -329,18 +329,9 @@ void loadGameConfAndInitWorld(const std::string &path, const std::string &name,
 		}
 	}
 
-	// Override defaults with those provided by the game.
-	// We clear and reload the defaults because the defaults
-	// might have been overridden by other subgame config
-	// files that were loaded before.
-	g_settings->clearDefaults();
-	set_default_settings(g_settings);
-
-	Settings game_defaults;
-	getGameMinetestConfig(gamespec.path, game_defaults);
-	game_defaults.removeSecureSettings();
-
-	g_settings->overrideDefaults(&game_defaults);
+	Settings *game_settings = Settings::createLayer(SL_GAME);
+	getGameMinetestConfig(gamespec.path, *game_settings);
+	game_settings->removeSecureSettings();
 
 	infostream << "Initializing world at " << final_path << std::endl;
 
@@ -381,4 +372,8 @@ void loadGameConfAndInitWorld(const std::string &path, const std::string &name,
 
 		fs::safeWriteToFile(map_meta_path, oss.str());
 	}
+
+	// The Settings object is no longer needed for created worlds
+	if (create_world)
+		delete game_settings;
 }

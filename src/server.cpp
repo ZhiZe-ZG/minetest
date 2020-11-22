@@ -351,6 +351,7 @@ Server::~Server()
 	// Deinitialize scripting
 	infostream << "Server: Deinitializing scripting" << std::endl;
 	delete m_script;
+	delete Settings::getLayer(SL_GAME);
 
 	while (!m_unsent_map_edit_queue.empty()) {
 		delete m_unsent_map_edit_queue.front();
